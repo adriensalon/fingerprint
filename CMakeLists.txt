@@ -7,8 +7,9 @@ option(FINGERPRINT_BUILD_DEMO "Builds demo executables and fingerprint compariso
 include(cmake/tlsh.cmake)
 include(cmake/ssdeep.cmake)
 include(cmake/capa.cmake)
+include(cmake/bindiff.cmake)
 
-set(FINGERPRINT_TOOLS sha256 tlsh ssdeep capa)
+set(FINGERPRINT_TOOLS sha256 tlsh ssdeep capa bindiff)
 file(GLOB FINGERPRINT_TOOL_SCRIPTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/*.cmake")
 
 function(_fingerprint_compare_pairwise target1 target2)
@@ -40,6 +41,13 @@ function(_fingerprint_compare_pairwise target1 target2)
         elseif(tool STREQUAL "capa")
             list(APPEND extra_args "-DFINGERPRINT_CAPA_EXECUTABLE=$<TARGET_FILE:fingerprint_capa>")
             list(APPEND extra_deps fingerprint_capa_build "$<TARGET_FILE:fingerprint_capa>")
+        elseif(tool STREQUAL "bindiff")
+            list(APPEND extra_args
+                "-DFINGERPRINT_BINDIFF_EXECUTABLE=$<TARGET_FILE:fingerprint_bindiff>"
+                "-DFINGERPRINT_BINEXPORT_EXECUTABLE=${FINGERPRINT_BINEXPORT_EXECUTABLE}"
+                "-DFINGERPRINT_BINEXPORT_ROOT=${FINGERPRINT_BINEXPORT_ROOT}"
+                "-DFINGERPRINT_BINEXPORT_JAVA_EXECUTABLE=${Java_JAVA_EXECUTABLE}")
+            list(APPEND extra_deps fingerprint_bindiff_build ${FINGERPRINT_BINDIFF_DEPENDENCIES})
         endif()
         set(script "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/cmake/${tool}.cmake")
         list(APPEND commands COMMAND "${CMAKE_COMMAND}"
