@@ -84,10 +84,16 @@ foreach(_field IN ITEMS _output _executable)
     string(REPLACE "\n" "\\n" ${_field} "${${_field}}")
     string(REPLACE "\t" "\\t" ${_field} "${${_field}}")
 endforeach()
-file(WRITE "${OUTPUT}"
+string(CONCAT _result
     "{\n"
-    "  \"tool\": \"ssdeep\",\n"
     "  \"score\": ${_score},\n"
     "  \"raw_output\": \"${_output}\",\n"
     "  \"executable\": \"${_executable}\"\n"
     "}\n")
+if(EXISTS "${OUTPUT}")
+    file(READ "${OUTPUT}" _report)
+else()
+    set(_report "{}")
+endif()
+string(JSON _report SET "${_report}" ssdeep "${_result}")
+file(WRITE "${OUTPUT}" "${_report}\n")

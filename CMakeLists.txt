@@ -6,47 +6,58 @@ option(FINGERPRINT_BUILD_DEMO "Builds demo executables and fingerprint compariso
 
 include(cmake/tlsh.cmake)
 include(cmake/ssdeep.cmake)
+include(cmake/capa.cmake)
 
+set(FINGERPRINT_TOOLS sha256 tlsh ssdeep capa)
 file(GLOB FINGERPRINT_TOOL_SCRIPTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/*.cmake")
 
-function(_fingerprint_compare_pairwise_all tool target1 target2)
-    cmake_parse_arguments(PARSE_ARGV 3 ARG "" "" "DEPENDS;ARGS")
+function(_fingerprint_compare_pairwise target1 target2)
+    cmake_parse_arguments(PARSE_ARGV 2 ARG "" "" "DEPENDS;ARGS")
     if(NOT TARGET "${target1}" OR NOT TARGET "${target2}")
         message(FATAL_ERROR "Unknown target in fingerprint comparison")
     endif()
-    string(MAKE_C_IDENTIFIER "${tool}_${target1}_${target2}" name)
-    string(SHA256 id "${tool}|${target1}|${target2}")
+    string(MAKE_C_IDENTIFIER "${target1}_${target2}" name)
+    string(SHA256 id "${target1}|${target2}")
     string(SUBSTRING "${id}" 0 12 id)
     set(comparison "fingerprint_${name}_${id}")
     set(comparison "${comparison}" PARENT_SCOPE)
     if(TARGET "${comparison}")
         return()
     endif()
-    set(script "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/cmake/${tool}.cmake")
     set(directory "${CMAKE_CURRENT_BINARY_DIR}/fingerprint")
     set(output "${directory}/${name}_${id}.json")
-    set(extra_args "${ARG_ARGS}")
+    set(temporary "${output}.tmp")
+    set(commands)
     set(extra_deps "${ARG_DEPENDS}")
-    if(tool STREQUAL "tlsh")
-        list(APPEND extra_args "-DFINGERPRINT_TLSH_EXECUTABLE=$<TARGET_FILE:fingerprint_tlsh>")
-        list(APPEND extra_deps fingerprint_tlsh_build)
-    elseif(tool STREQUAL "ssdeep")
-        list(APPEND extra_args "-DFINGERPRINT_SSDEEP_EXECUTABLE=$<TARGET_FILE:fingerprint_ssdeep>")
-        list(APPEND extra_deps fingerprint_ssdeep_build "$<TARGET_FILE:fingerprint_ssdeep>")
-    endif()
+    foreach(tool IN LISTS FINGERPRINT_TOOLS)
+        set(extra_args "${ARG_ARGS}")
+        if(tool STREQUAL "tlsh")
+            list(APPEND extra_args "-DFINGERPRINT_TLSH_EXECUTABLE=$<TARGET_FILE:fingerprint_tlsh>")
+            list(APPEND extra_deps fingerprint_tlsh_build "$<TARGET_FILE:fingerprint_tlsh>")
+        elseif(tool STREQUAL "ssdeep")
+            list(APPEND extra_args "-DFINGERPRINT_SSDEEP_EXECUTABLE=$<TARGET_FILE:fingerprint_ssdeep>")
+            list(APPEND extra_deps fingerprint_ssdeep_build "$<TARGET_FILE:fingerprint_ssdeep>")
+        elseif(tool STREQUAL "capa")
+            list(APPEND extra_args "-DFINGERPRINT_CAPA_EXECUTABLE=$<TARGET_FILE:fingerprint_capa>")
+            list(APPEND extra_deps fingerprint_capa_build "$<TARGET_FILE:fingerprint_capa>")
+        endif()
+        set(script "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/cmake/${tool}.cmake")
+        list(APPEND commands COMMAND "${CMAKE_COMMAND}"
+            "-DINPUT1=$<TARGET_FILE:${target1}>"
+            "-DINPUT2=$<TARGET_FILE:${target2}>"
+            "-DOUTPUT=${temporary}"
+            ${extra_args}
+            -P "${script}")
+    endforeach()
     add_custom_command(
         OUTPUT "${output}"
         COMMAND "${CMAKE_COMMAND}" -E make_directory "${directory}"
-        COMMAND "${CMAKE_COMMAND}"
-            "-DINPUT1=$<TARGET_FILE:${target1}>"
-            "-DINPUT2=$<TARGET_FILE:${target2}>"
-            "-DOUTPUT=${output}"
-            ${extra_args}
-            -P "${script}"
+        COMMAND "${CMAKE_COMMAND}" -E rm -f "${temporary}"
+        ${commands}
+        COMMAND "${CMAKE_COMMAND}" -E rename "${temporary}" "${output}"
         DEPENDS
             "${target1}"
             "${target2}"
-            "${script}"
             ${FINGERPRINT_TOOL_SCRIPTS}
             ${extra_deps}
         COMMENT ""
@@ -54,8 +65,8 @@ function(_fingerprint_compare_pairwise_all tool target1 target2)
     add_custom_target("${comparison}" DEPENDS "${output}")
 endfunction()
 
-function(_fingerprint_compare_variadic tool)
-    cmake_parse_arguments(PARSE_ARGV 1 ARG "" "" "DEPENDS;ARGS")
+function(fingerprint_compare)
+    cmake_parse_arguments(PARSE_ARGV 0 ARG "" "" "DEPENDS;ARGS")
     set(targets ${ARG_UNPARSED_ARGUMENTS})
     list(LENGTH targets count)
     if(count LESS 2)
@@ -70,8 +81,7 @@ function(_fingerprint_compare_variadic tool)
                 continue()
             endif()
             list(GET targets ${j} right_target)
-            _fingerprint_compare_pairwise_all(
-                "${tool}"
+            _fingerprint_compare_pairwise(
                 "${left_target}"
                 "${right_target}"
                 DEPENDS ${ARG_DEPENDS}
@@ -80,32 +90,22 @@ function(_fingerprint_compare_variadic tool)
         endforeach()
     endforeach()
 
-    string(SHA256 id "${tool}|${targets}")
-    string(SUBSTRING "${id}" 0 12 id)
-    set(group "fingerprint_${tool}_all_${id}")
-    if(NOT TARGET "${group}")
-        add_custom_target("${group}"
-            COMMAND "${CMAKE_COMMAND}" -E echo "Compared fingerprints with ${tool} for ${count} targets"
-            COMMENT ""
-            VERBATIM)
-        add_dependencies("${group}" ${comparisons})
-    endif()
     if(NOT TARGET fingerprint_compare)
         add_custom_target(fingerprint_compare ALL)
     endif()
-    add_dependencies(fingerprint_compare "${group}")
-endfunction()
-
-function(fingerprint_compare)
-    cmake_parse_arguments(PARSE_ARGV 0 ARG "" "" "DEPENDS;ARGS")
-    set(targets ${ARG_UNPARSED_ARGUMENTS})
-    list(LENGTH targets count)
-    if(count LESS 2)
-        message(FATAL_ERROR "At least two targets are required for fingerprint comparison")
-    endif()
-    _fingerprint_compare_variadic(sha256 ${targets} DEPENDS ${ARG_DEPENDS} ARGS ${ARG_ARGS})
-    _fingerprint_compare_variadic(tlsh ${targets} DEPENDS ${ARG_DEPENDS} ARGS ${ARG_ARGS})
-    _fingerprint_compare_variadic(ssdeep ${targets} DEPENDS ${ARG_DEPENDS} ARGS ${ARG_ARGS})
+    foreach(tool IN LISTS FINGERPRINT_TOOLS)
+        string(SHA256 id "${tool}|${targets}")
+        string(SUBSTRING "${id}" 0 12 id)
+        set(group "fingerprint_${tool}_all_${id}")
+        if(NOT TARGET "${group}")
+            add_custom_target("${group}"
+                COMMAND "${CMAKE_COMMAND}" -E echo "Compared fingerprints with ${tool} for ${count} targets"
+                COMMENT ""
+                VERBATIM)
+            add_dependencies("${group}" ${comparisons})
+        endif()
+        add_dependencies(fingerprint_compare "${group}")
+    endforeach()
 endfunction()
 
 if(FINGERPRINT_BUILD_DEMO)

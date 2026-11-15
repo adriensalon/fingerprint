@@ -7,10 +7,16 @@ if(hash1 STREQUAL hash2)
 else()
     set(identical false)
 endif()
-file(WRITE "${OUTPUT}"
+string(CONCAT _result
     "{\n"
-    "  \"tool\": \"sha256\",\n"
     "  \"hash1\": \"${hash1}\",\n"
     "  \"hash2\": \"${hash2}\",\n"
     "  \"identical\": ${identical}\n"
     "}\n")
+if(EXISTS "${OUTPUT}")
+    file(READ "${OUTPUT}" _report)
+else()
+    set(_report "{}")
+endif()
+string(JSON _report SET "${_report}" sha256 "${_result}")
+file(WRITE "${OUTPUT}" "${_report}\n")

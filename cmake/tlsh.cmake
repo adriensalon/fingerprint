@@ -63,13 +63,24 @@ if(_dist_match)
     set(_distance "${CMAKE_MATCH_1}")
 endif()
 string(REPLACE "\r\n" "\n" _output "${_output}")
-string(REPLACE "\"" "\\\"" _output "${_output}")
-string(REPLACE "\n" "\\n" _output "${_output}")
-file(WRITE "${OUTPUT}"
+set(_executable "${FINGERPRINT_TLSH_EXECUTABLE}")
+foreach(_field IN ITEMS _output _executable)
+    string(REPLACE "\\" "\\\\" ${_field} "${${_field}}")
+    string(REPLACE "\"" "\\\"" ${_field} "${${_field}}")
+    string(REPLACE "\r" "\\r" ${_field} "${${_field}}")
+    string(REPLACE "\n" "\\n" ${_field} "${${_field}}")
+    string(REPLACE "\t" "\\t" ${_field} "${${_field}}")
+endforeach()
+string(CONCAT _result
     "{\n"
-    "  \"tool\": \"tlsh\",\n"
     "  \"distance\": \"${_distance}\",\n"
     "  \"raw_output\": \"${_output}\",\n"
-    "  \"executable\": \"${FINGERPRINT_TLSH_EXECUTABLE}\"\n"
+    "  \"executable\": \"${_executable}\"\n"
     "}\n")
-	
+if(EXISTS "${OUTPUT}")
+    file(READ "${OUTPUT}" _report)
+else()
+    set(_report "{}")
+endif()
+string(JSON _report SET "${_report}" tlsh "${_result}")
+file(WRITE "${OUTPUT}" "${_report}\n")
