@@ -440,19 +440,41 @@ std::string make_report(const Corpus& corpus, bool all_pairs) {
     if (!duplicates) out << "  All executable SHA-256 hashes differ.\n";
     ranges(out, corpus, false);
     if (duplicates) ranges(out, corpus, true);
-    out << "\nPair details\n  Pair   TLSH   ssdeep%  BinDiff%   conf%    BSim%   contain%  capa%  BinDiff matched/first/second\n";
-    std::size_t printed = 0;
+    using PairRow = std::array<std::string, 13>;
+    const PairRow headings{"Pair", "First", "Second", "TLSH", "ssdeep%", "BinDiff%", "conf%", "BSim%", "contain%", "capa%", "BD funcs", "capa rules", "SHA-256"};
+    std::array<std::size_t, headings.size()> widths{};
+    for (std::size_t i = 0; i < headings.size(); ++i) widths[i] = headings[i].size();
+    std::vector<PairRow> rows;
+    std::vector<const Pair*> shown;
     for (const auto& [key, pair] : corpus.pairs) {
-        if (!all_pairs && printed == 40) break;
-        ++printed;
-        out << "  " << std::left << std::setw(5) << pair.id << std::right << std::setw(6) << number(pair.metrics[tlsh], 0);
-        for (int i : {ssdeep, bindiff, confidence, bsim, containment, capa}) out << std::setw(i == containment ? 10 : 9) << number(pair.metrics[i]);
-        out << "  " << pair.matched << '/' << pair.functions1 << '/' << pair.functions2;
-        if (pair.identical) out << "  IDENTICAL";
-        out << "\n    " << display(pair.first) << " <-> " << display(pair.second) << " [" << display(pair.file) << "]\n";
-        out << "    capa rules: " << pair.shared << " shared, " << pair.only1 << " only in first, " << pair.only2 << " only in second\n";
+        if (!all_pairs && rows.size() == 40) break;
+        PairRow row{pair.id, display(pair.first), display(pair.second), number(pair.metrics[tlsh], 0),
+            number(pair.metrics[ssdeep]), number(pair.metrics[bindiff]), number(pair.metrics[confidence]),
+            number(pair.metrics[bsim]), number(pair.metrics[containment]), number(pair.metrics[capa]),
+            std::to_string(pair.matched) + '/' + std::to_string(pair.functions1) + '/' + std::to_string(pair.functions2),
+            std::to_string(pair.shared) + '/' + std::to_string(pair.only1) + '/' + std::to_string(pair.only2),
+            pair.identical ? "IDENTICAL" : "-"};
+        for (std::size_t i = 0; i < row.size(); ++i) widths[i] = std::max(widths[i], row[i].size());
+        rows.push_back(std::move(row));
+        shown.push_back(&pair);
     }
-    if (printed < corpus.pairs.size()) out << "  Showing " << printed << '/' << corpus.pairs.size() << " pairs; use --all-pairs to list all rows. All statistics use every pair.\n";
+    auto print_pair_row = [&](const PairRow& row) {
+        out << "  ";
+        for (std::size_t i = 0; i < row.size(); ++i) {
+            if (i) out << "  ";
+            out << (i < 3 || i == row.size() - 1 ? std::left : std::right)
+                << std::setw(static_cast<int>(widths[i])) << row[i];
+        }
+        out << '\n';
+    };
+    out << "\nPair details\n";
+    print_pair_row(headings);
+    for (const auto& row : rows) print_pair_row(row);
+    out << "  BD funcs = matched/first/second; capa rules = shared/only first/only second.\n";
+    out << "\n  " << std::left << std::setw(static_cast<int>(widths[0])) << "Pair" << "  Source JSON\n";
+    for (auto pair : shown)
+        out << "  " << std::left << std::setw(static_cast<int>(widths[0])) << pair->id << "  " << display(pair->file) << '\n';
+    if (shown.size() < corpus.pairs.size()) out << "  Showing " << shown.size() << '/' << corpus.pairs.size() << " pairs; use --all-pairs to list all rows. All statistics use every pair.\n";
     out << "\nNearest neighbours among different SHA-256 hashes\n";
     for (const auto& [name, exe] : corpus.executables) {
         out << "  " << display(name) << '\n';
