@@ -53,6 +53,9 @@ function(_fingerprint_compare_pairwise target1 target2)
         list(APPEND commands COMMAND "${CMAKE_COMMAND}"
             "-DINPUT1=$<TARGET_FILE:${target1}>"
             "-DINPUT2=$<TARGET_FILE:${target2}>"
+            "-DINPUT1_TARGET=${target1}"
+            "-DINPUT2_TARGET=${target2}"
+            "-DBUILD_CONFIG=$<CONFIG>"
             "-DOUTPUT=${temporary}"
             ${extra_args}
             -P "${script}")

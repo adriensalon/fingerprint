@@ -54,33 +54,19 @@ execute_process(
     ERROR_VARIABLE _error
     OUTPUT_STRIP_TRAILING_WHITESPACE
     ERROR_STRIP_TRAILING_WHITESPACE)
-if(NOT _status EQUAL 0)
+if(NOT _status STREQUAL "0")
     message(FATAL_ERROR "TLSH comparison failed for ${INPUT1} and ${INPUT2}: ${_error}\n${_output}")
 endif()
-set(_distance "unknown")
 string(REGEX MATCH "\"dist\"[ \t]*:[ \t]*\"?([0-9]+)\"?" _dist_match "${_output}")
-if(_dist_match)
-    set(_distance "${CMAKE_MATCH_1}")
+if(NOT _dist_match)
+    message(FATAL_ERROR "TLSH comparison did not return a distance: ${_error}\n${_output}")
 endif()
-string(REPLACE "\r\n" "\n" _output "${_output}")
-set(_executable "${FINGERPRINT_TLSH_EXECUTABLE}")
-foreach(_field IN ITEMS _output _executable)
-    string(REPLACE "\\" "\\\\" ${_field} "${${_field}}")
-    string(REPLACE "\"" "\\\"" ${_field} "${${_field}}")
-    string(REPLACE "\r" "\\r" ${_field} "${${_field}}")
-    string(REPLACE "\n" "\\n" ${_field} "${${_field}}")
-    string(REPLACE "\t" "\\t" ${_field} "${${_field}}")
-endforeach()
-string(CONCAT _result
-    "{\n"
-    "  \"distance\": \"${_distance}\",\n"
-    "  \"raw_output\": \"${_output}\",\n"
-    "  \"executable\": \"${_executable}\"\n"
-    "}\n")
+set(_distance "${CMAKE_MATCH_1}")
+string(JSON _result SET "{}" distance "${_distance}")
 if(EXISTS "${OUTPUT}")
     file(READ "${OUTPUT}" _report)
 else()
-    set(_report "{}")
+    set(_report "{\"schema_version\":1,\"tools\":{}}")
 endif()
-string(JSON _report SET "${_report}" tlsh "${_result}")
+string(JSON _report SET "${_report}" tools tlsh "${_result}")
 file(WRITE "${OUTPUT}" "${_report}\n")

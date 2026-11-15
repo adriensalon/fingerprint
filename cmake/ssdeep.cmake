@@ -6,7 +6,6 @@ if(NOT CMAKE_SCRIPT_MODE_FILE)
         NAMES ssdeep
         NO_CMAKE_FIND_ROOT_PATH)
     if(NOT FINGERPRINT_SSDEEP_EXECUTABLE AND CMAKE_HOST_WIN32)
-        # Upstream's Windows CLI requires MinGW; use its official release.
         set(_fingerprint_ssdeep_archive "${FINGERPRINT_SSDEEP_ROOT}/ssdeep-2.14.1-win32-binary.zip")
         set(_fingerprint_ssdeep_executable "${FINGERPRINT_SSDEEP_ROOT}/bin/ssdeep-2.14.1/ssdeep.exe")
         if(NOT EXISTS "${_fingerprint_ssdeep_executable}")
@@ -76,24 +75,11 @@ if(_score GREATER 100)
     message(FATAL_ERROR "ssdeep returned an invalid similarity score: ${_score}")
 endif()
 
-set(_executable "${FINGERPRINT_SSDEEP_EXECUTABLE}")
-foreach(_field IN ITEMS _output _executable)
-    string(REPLACE "\\" "\\\\" ${_field} "${${_field}}")
-    string(REPLACE "\"" "\\\"" ${_field} "${${_field}}")
-    string(REPLACE "\r" "\\r" ${_field} "${${_field}}")
-    string(REPLACE "\n" "\\n" ${_field} "${${_field}}")
-    string(REPLACE "\t" "\\t" ${_field} "${${_field}}")
-endforeach()
-string(CONCAT _result
-    "{\n"
-    "  \"score\": ${_score},\n"
-    "  \"raw_output\": \"${_output}\",\n"
-    "  \"executable\": \"${_executable}\"\n"
-    "}\n")
+string(JSON _result SET "{}" similarity_percent "${_score}")
 if(EXISTS "${OUTPUT}")
     file(READ "${OUTPUT}" _report)
 else()
-    set(_report "{}")
+    set(_report "{\"schema_version\":1,\"tools\":{}}")
 endif()
-string(JSON _report SET "${_report}" ssdeep "${_result}")
+string(JSON _report SET "${_report}" tools ssdeep "${_result}")
 file(WRITE "${OUTPUT}" "${_report}\n")
