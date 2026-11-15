@@ -10,6 +10,7 @@ if(NOT CMAKE_SCRIPT_MODE_FILE)
         set(_fingerprint_ssdeep_executable "${FINGERPRINT_SSDEEP_ROOT}/bin/ssdeep-2.14.1/ssdeep.exe")
         if(NOT EXISTS "${_fingerprint_ssdeep_executable}")
             file(MAKE_DIRECTORY "${FINGERPRINT_SSDEEP_ROOT}")
+            message(STATUS "[fingerprint] Downloading ssdeep")
             file(DOWNLOAD
                 "https://github.com/ssdeep-project/ssdeep/releases/download/release-2.14.1/ssdeep-2.14.1-win32-binary.zip"
                 "${_fingerprint_ssdeep_archive}"
@@ -20,9 +21,11 @@ if(NOT CMAKE_SCRIPT_MODE_FILE)
             if(NOT _fingerprint_ssdeep_download_code EQUAL 0)
                 message(FATAL_ERROR "Failed to download ssdeep: ${_fingerprint_ssdeep_download_status}")
             endif()
+            message(STATUS "[fingerprint] Extracting ssdeep")
             file(ARCHIVE_EXTRACT
                 INPUT "${_fingerprint_ssdeep_archive}"
                 DESTINATION "${FINGERPRINT_SSDEEP_ROOT}/bin")
+            message(STATUS "[fingerprint] ssdeep ready")
         endif()
         set(FINGERPRINT_SSDEEP_EXECUTABLE "${_fingerprint_ssdeep_executable}"
             CACHE FILEPATH "Path to the ssdeep executable" FORCE)
@@ -52,8 +55,6 @@ if(NOT DEFINED OUTPUT OR OUTPUT STREQUAL "")
     message(FATAL_ERROR "OUTPUT is required for the ssdeep comparison report")
 endif()
 
-# Directory mode compares the two inputs once; -a includes scores of zero.
-# The Windows CLI requires backslashes in absolute input paths.
 cmake_path(NATIVE_PATH INPUT1 NORMALIZE _input1)
 cmake_path(NATIVE_PATH INPUT2 NORMALIZE _input2)
 execute_process(

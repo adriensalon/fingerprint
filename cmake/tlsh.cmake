@@ -6,6 +6,7 @@ if(NOT CMAKE_SCRIPT_MODE_FILE)
     set(FINGERPRINT_TLSH_BINARY "$<TARGET_FILE:fingerprint_tlsh>")
     if(NOT EXISTS "${FINGERPRINT_TLSH_SOURCE_DIR}/CMakeLists.txt")
         find_package(Git REQUIRED)
+        message(STATUS "[fingerprint] Downloading TLSH sources")
         execute_process(
             COMMAND "${GIT_EXECUTABLE}" clone --depth 1 --branch 4.12.1 https://github.com/trendmicro/tlsh.git "${FINGERPRINT_TLSH_SOURCE_DIR}"
             RESULT_VARIABLE _fingerprint_tlsh_clone_status
@@ -14,6 +15,7 @@ if(NOT CMAKE_SCRIPT_MODE_FILE)
         if(NOT _fingerprint_tlsh_clone_status EQUAL 0)
             message(FATAL_ERROR "Failed to clone TLSH source into ${FINGERPRINT_TLSH_SOURCE_DIR}")
         endif()
+        message(STATUS "[fingerprint] TLSH sources ready")
     endif()
     set(FINGERPRINT_TLSH_SOURCES
         "${FINGERPRINT_TLSH_SOURCE_DIR}/src/tlsh.cpp"
