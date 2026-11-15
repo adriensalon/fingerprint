@@ -8,8 +8,9 @@ include(cmake/tlsh.cmake)
 include(cmake/ssdeep.cmake)
 include(cmake/capa.cmake)
 include(cmake/bindiff.cmake)
+include(cmake/bsim.cmake)
 
-set(FINGERPRINT_TOOLS sha256 tlsh ssdeep capa bindiff)
+set(FINGERPRINT_TOOLS sha256 tlsh ssdeep capa bindiff bsim)
 file(GLOB FINGERPRINT_TOOL_SCRIPTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/*.cmake")
 
 function(_fingerprint_compare_pairwise target1 target2)
@@ -48,6 +49,12 @@ function(_fingerprint_compare_pairwise target1 target2)
                 "-DFINGERPRINT_BINEXPORT_ROOT=${FINGERPRINT_BINEXPORT_ROOT}"
                 "-DFINGERPRINT_BINEXPORT_JAVA_EXECUTABLE=${Java_JAVA_EXECUTABLE}")
             list(APPEND extra_deps fingerprint_bindiff_build ${FINGERPRINT_BINDIFF_DEPENDENCIES})
+        elseif(tool STREQUAL "bsim")
+            list(APPEND extra_args
+                "-DFINGERPRINT_BSIM_EXECUTABLE=$<TARGET_FILE:fingerprint_bsim>"
+                "-DFINGERPRINT_BSIM_ROOT=${FINGERPRINT_BSIM_ROOT}"
+                "-DFINGERPRINT_BSIM_JAVA_EXECUTABLE=${Java_JAVA_EXECUTABLE}")
+            list(APPEND extra_deps fingerprint_bsim_build ${FINGERPRINT_BSIM_DEPENDENCIES})
         endif()
         set(script "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/cmake/${tool}.cmake")
         list(APPEND commands COMMAND "${CMAKE_COMMAND}"
