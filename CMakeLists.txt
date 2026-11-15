@@ -5,6 +5,7 @@ project(fingerprint)
 option(FINGERPRINT_BUILD_DEMO "Builds demo executables and fingerprint comparisons" ON)
 
 include(cmake/tlsh.cmake)
+include(cmake/ssdeep.cmake)
 
 file(GLOB FINGERPRINT_TOOL_SCRIPTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/*.cmake")
 
@@ -29,6 +30,9 @@ function(_fingerprint_compare_pairwise_all tool target1 target2)
     if(tool STREQUAL "tlsh")
         list(APPEND extra_args "-DFINGERPRINT_TLSH_EXECUTABLE=$<TARGET_FILE:fingerprint_tlsh>")
         list(APPEND extra_deps fingerprint_tlsh_build)
+    elseif(tool STREQUAL "ssdeep")
+        list(APPEND extra_args "-DFINGERPRINT_SSDEEP_EXECUTABLE=$<TARGET_FILE:fingerprint_ssdeep>")
+        list(APPEND extra_deps fingerprint_ssdeep_build "$<TARGET_FILE:fingerprint_ssdeep>")
     endif()
     add_custom_command(
         OUTPUT "${output}"
@@ -101,6 +105,7 @@ function(fingerprint_compare)
     endif()
     _fingerprint_compare_variadic(sha256 ${targets} DEPENDS ${ARG_DEPENDS} ARGS ${ARG_ARGS})
     _fingerprint_compare_variadic(tlsh ${targets} DEPENDS ${ARG_DEPENDS} ARGS ${ARG_ARGS})
+    _fingerprint_compare_variadic(ssdeep ${targets} DEPENDS ${ARG_DEPENDS} ARGS ${ARG_ARGS})
 endfunction()
 
 if(FINGERPRINT_BUILD_DEMO)
