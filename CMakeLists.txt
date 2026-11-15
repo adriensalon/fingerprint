@@ -1,7 +1,148 @@
 ﻿include_guard(GLOBAL)
 cmake_minimum_required(VERSION 3.25)
-project(fingerprint)
 
+set(FINGERPRINT_TOOLS sha256 tlsh ssdeep capa bindiff bsim)
+
+function(_fingerprint_build_tools manifest)
+    get_property(built GLOBAL PROPERTY FINGERPRINT_TOOLS_BUILT)
+    if(built)
+        return()
+    endif()
+    set(stamp "${FINGERPRINT_TOOLS_BUILD_DIRECTORY}/built-${BUILD_CONFIG}.stamp")
+    file(GLOB_RECURSE sources LIST_DIRECTORIES FALSE
+        "${FINGERPRINT_TLSH_SOURCE_DIR}/src/*"
+        "${FINGERPRINT_TLSH_SOURCE_DIR}/include/*"
+        "${FINGERPRINT_TLSH_SOURCE_DIR}/Windows/*")
+    list(APPEND sources "${FINGERPRINT_TLSH_SOURCE_DIR}/test/tlsh_unittest.cpp"
+        "${FINGERPRINT_SOURCE_DIRECTORY}/tool/CMakeLists.txt"
+        "${FINGERPRINT_SOURCE_DIRECTORY}/tool/report.cpp"
+        "${FINGERPRINT_SOURCE_DIRECTORY}/cmake/tlsh.cmake" "${manifest}")
+    set(refresh FALSE)
+    foreach(source IN LISTS sources)
+        if(NOT EXISTS "${stamp}" OR "${source}" IS_NEWER_THAN "${stamp}")
+            set(refresh TRUE)
+        endif()
+    endforeach()
+    if(NOT EXISTS "${FINGERPRINT_TLSH_EXECUTABLE}" OR NOT EXISTS "${FINGERPRINT_REPORT_EXECUTABLE}"
+       OR NOT EXISTS "${FINGERPRINT_TOOLS_BUILD_DIRECTORY}/CMakeCache.txt")
+        set(refresh TRUE)
+    endif()
+    if(refresh)
+        message(STATUS "[fingerprint] Configuring private TLSH and reporter build")
+        execute_process(COMMAND "${CMAKE_COMMAND}"
+            -S "${FINGERPRINT_SOURCE_DIRECTORY}/tool" -B "${FINGERPRINT_TOOLS_BUILD_DIRECTORY}"
+            ${FINGERPRINT_TOOLS_CONFIGURE_ARGS}
+            "-DFINGERPRINT_TLSH_SOURCE_DIR:PATH=${FINGERPRINT_TLSH_SOURCE_DIR}"
+            RESULT_VARIABLE status)
+        if(NOT status STREQUAL "0")
+            message(FATAL_ERROR "Fingerprint tool configuration failed (${status})")
+        endif()
+        message(STATUS "[fingerprint] Building TLSH and reporter")
+        execute_process(COMMAND "${CMAKE_COMMAND}" --build "${FINGERPRINT_TOOLS_BUILD_DIRECTORY}"
+            --config "${BUILD_CONFIG}" --parallel
+            RESULT_VARIABLE status)
+        if(NOT status STREQUAL "0")
+            message(FATAL_ERROR "Fingerprint tool build failed (${status})")
+        endif()
+        file(WRITE "${stamp}" "")
+        message(STATUS "[fingerprint] TLSH and reporter ready")
+    endif()
+    set_property(GLOBAL PROPERTY FINGERPRINT_TOOLS_BUILT TRUE)
+endfunction()
+
+function(_fingerprint_report)
+    foreach(tool IN LISTS FINGERPRINT_TOOLS)
+        message("Compared fingerprints with ${tool} for ${count} targets")
+    endforeach()
+    execute_process(
+        COMMAND "${FINGERPRINT_REPORT_EXECUTABLE}"
+            --expected-targets "${count}" "--configuration=${BUILD_CONFIG}"
+            --manifest "${report_manifest}" --output "${summary}"
+        RESULT_VARIABLE status)
+    if(NOT status STREQUAL "0")
+        message(FATAL_ERROR "Fingerprint reporting failed (${status})")
+    endif()
+endfunction()
+
+function(_fingerprint_run manifest)
+    include("${manifest}")
+    _fingerprint_build_tools("${manifest}")
+    list(LENGTH FINGERPRINT_TARGETS count)
+    math(EXPR last_index "${count} - 1")
+    file(MAKE_DIRECTORY "${FINGERPRINT_OUTPUT_DIRECTORY}")
+    set(reports)
+    foreach(i RANGE 0 ${last_index})
+        list(GET FINGERPRINT_TARGETS ${i} target1)
+        list(GET FINGERPRINT_INPUTS ${i} input1)
+        foreach(j RANGE ${i} ${last_index})
+            if(i EQUAL j)
+                continue()
+            endif()
+            list(GET FINGERPRINT_TARGETS ${j} target2)
+            list(GET FINGERPRINT_INPUTS ${j} input2)
+            string(MAKE_C_IDENTIFIER "${target1}_${target2}" name)
+            string(SHA256 id "${target1}|${target2}|${FINGERPRINT_BINEXPORT_EXECUTABLE}|${FINGERPRINT_BSIM_EXECUTABLE}")
+            string(SUBSTRING "${id}" 0 12 id)
+            set(output "${FINGERPRINT_OUTPUT_DIRECTORY}/${name}_${id}.json")
+            set(temporary "${output}.tmp")
+            set(refresh FALSE)
+            foreach(dependency IN ITEMS "${input1}" "${input2}" "${manifest}" "${CMAKE_SCRIPT_MODE_FILE}" ${FINGERPRINT_DEPENDENCIES})
+                if(NOT EXISTS "${dependency}")
+                    message(FATAL_ERROR "Fingerprint dependency does not exist: ${dependency}")
+                endif()
+                if(NOT EXISTS "${output}" OR "${dependency}" IS_NEWER_THAN "${output}")
+                    set(refresh TRUE)
+                endif()
+            endforeach()
+            if(refresh)
+                file(REMOVE "${temporary}")
+                foreach(tool IN LISTS FINGERPRINT_TOOLS)
+                    execute_process(
+                        COMMAND "${CMAKE_COMMAND}"
+                            "-DINPUT1=${input1}" "-DINPUT2=${input2}"
+                            "-DINPUT1_TARGET=${target1}" "-DINPUT2_TARGET=${target2}"
+                            "-DBUILD_CONFIG=${BUILD_CONFIG}" "-DOUTPUT=${temporary}"
+                            ${FINGERPRINT_ARGS}
+                            "-DFINGERPRINT_TLSH_EXECUTABLE=${FINGERPRINT_TLSH_EXECUTABLE}"
+                            "-DFINGERPRINT_SSDEEP_EXECUTABLE=${FINGERPRINT_SSDEEP_EXECUTABLE}"
+                            "-DFINGERPRINT_CAPA_EXECUTABLE=${FINGERPRINT_CAPA_EXECUTABLE}"
+                            "-DFINGERPRINT_BINDIFF_EXECUTABLE=${FINGERPRINT_BINDIFF_EXECUTABLE}"
+                            "-DFINGERPRINT_BINEXPORT_EXECUTABLE=${FINGERPRINT_BINEXPORT_EXECUTABLE}"
+                            "-DFINGERPRINT_BINEXPORT_ROOT=${FINGERPRINT_BINEXPORT_ROOT}"
+                            "-DFINGERPRINT_BINEXPORT_JAVA_EXECUTABLE=${FINGERPRINT_JAVA_EXECUTABLE}"
+                            "-DFINGERPRINT_BSIM_EXECUTABLE=${FINGERPRINT_BSIM_EXECUTABLE}"
+                            "-DFINGERPRINT_BSIM_ROOT=${FINGERPRINT_BSIM_ROOT}"
+                            "-DFINGERPRINT_BSIM_JAVA_EXECUTABLE=${FINGERPRINT_JAVA_EXECUTABLE}"
+                            -P "${FINGERPRINT_SOURCE_DIRECTORY}/cmake/${tool}.cmake"
+                        RESULT_VARIABLE status)
+                    if(NOT status STREQUAL "0")
+                        file(REMOVE "${temporary}")
+                        message(FATAL_ERROR "Fingerprint comparison with ${tool} failed for ${target1} and ${target2} (${status})")
+                    endif()
+                endforeach()
+                file(RENAME "${temporary}" "${output}")
+            endif()
+            list(APPEND reports "${output}")
+        endforeach()
+    endforeach()
+    set(report_manifest "${FINGERPRINT_OUTPUT_DIRECTORY}/report_${FINGERPRINT_SET_ID}.inputs")
+    set(summary "${FINGERPRINT_OUTPUT_DIRECTORY}/report_${FINGERPRINT_SET_ID}.txt")
+    list(JOIN reports "\n" inputs)
+    file(WRITE "${report_manifest}" "${inputs}\n")
+    _fingerprint_report()
+endfunction()
+
+if(CMAKE_SCRIPT_MODE_FILE)
+    if(NOT FINGERPRINT_MANIFESTS)
+        message(FATAL_ERROR "This script is run by the fingerprint_compare build target; comparison manifests are required")
+    endif()
+    foreach(manifest IN LISTS FINGERPRINT_MANIFESTS)
+        _fingerprint_run("${manifest}")
+    endforeach()
+    return()
+endif()
+
+project(fingerprint)
 option(FINGERPRINT_BUILD_DEMO "Builds demo executables and fingerprint comparisons" ON)
 
 include(cmake/tlsh.cmake)
@@ -9,116 +150,20 @@ include(cmake/ssdeep.cmake)
 include(cmake/capa.cmake)
 include(cmake/bindiff.cmake)
 include(cmake/bsim.cmake)
-
-set(FINGERPRINT_TOOLS sha256 tlsh ssdeep capa bindiff bsim)
 file(GLOB FINGERPRINT_TOOL_SCRIPTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/*.cmake")
 
-function(_fingerprint_report)
-    cmake_parse_arguments(PARSE_ARGV 0 ARG "" "TARGET_COUNT" "INPUTS;DEPENDS")
-    if(NOT TARGET fingerprint_report_tool)
-        add_executable(fingerprint_report_tool EXCLUDE_FROM_ALL "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/tool/report.cpp")
-        target_compile_features(fingerprint_report_tool PRIVATE cxx_std_20)
-    endif()
-    string(SHA256 id "${ARG_INPUTS}")
-    string(SUBSTRING "${id}" 0 12 id)
-    set(report "fingerprint_report_${id}")
-    if(NOT TARGET "${report}")
-        set(directory "${CMAKE_CURRENT_BINARY_DIR}/fingerprint/$<CONFIG>")
-        set(manifest "${directory}/report_${id}.inputs")
-        set(summary "${directory}/report_${id}.txt")
-        list(JOIN ARG_INPUTS "\n" inputs)
-        file(GENERATE OUTPUT "${manifest}" CONTENT "${inputs}\n")
-        add_custom_target("${report}"
-            COMMAND "$<TARGET_FILE:fingerprint_report_tool>"
-                --expected-targets "${ARG_TARGET_COUNT}"
-                "--configuration=$<CONFIG>"
-                --manifest "${manifest}" --output "${summary}"
-            BYPRODUCTS "${summary}"
-            DEPENDS fingerprint_report_tool
-            COMMENT ""
-            VERBATIM
-            USES_TERMINAL)
-        add_dependencies("${report}" ${ARG_DEPENDS})
-    endif()
-    if(NOT TARGET fingerprint_report)
-        add_custom_target(fingerprint_report)
-    endif()
-    add_dependencies(fingerprint_report "${report}")
-    add_dependencies(fingerprint_compare fingerprint_report)
-endfunction()
-
-function(_fingerprint_compare_pairwise target1 target2)
-    cmake_parse_arguments(PARSE_ARGV 2 ARG "" "" "DEPENDS;ARGS")
-    if(NOT TARGET "${target1}" OR NOT TARGET "${target2}")
-        message(FATAL_ERROR "Unknown target in fingerprint comparison")
-    endif()
-    string(MAKE_C_IDENTIFIER "${target1}_${target2}" name)
-    string(SHA256 id "${target1}|${target2}|${FINGERPRINT_BINEXPORT_EXECUTABLE}|${FINGERPRINT_BSIM_EXECUTABLE}")
-    string(SUBSTRING "${id}" 0 12 id)
-    set(comparison "fingerprint_${name}_${id}")
-    set(comparison "${comparison}" PARENT_SCOPE)
-    if(TARGET "${comparison}")
-        get_target_property(report "${comparison}" FINGERPRINT_REPORT)
-        set(report "${report}" PARENT_SCOPE)
-        return()
-    endif()
-    set(directory "${CMAKE_CURRENT_BINARY_DIR}/fingerprint/$<CONFIG>")
-    set(output "${directory}/${name}_${id}.json")
-    set(report "${output}" PARENT_SCOPE)
-    set(temporary "${output}.tmp")
-    set(commands)
-    set(extra_deps "${ARG_DEPENDS}")
-    foreach(tool IN LISTS FINGERPRINT_TOOLS)
-        set(extra_args "${ARG_ARGS}")
-        if(tool STREQUAL "tlsh")
-            list(APPEND extra_args "-DFINGERPRINT_TLSH_EXECUTABLE=$<TARGET_FILE:fingerprint_tlsh>")
-            list(APPEND extra_deps fingerprint_tlsh_build "$<TARGET_FILE:fingerprint_tlsh>")
-        elseif(tool STREQUAL "ssdeep")
-            list(APPEND extra_args "-DFINGERPRINT_SSDEEP_EXECUTABLE=$<TARGET_FILE:fingerprint_ssdeep>")
-            list(APPEND extra_deps fingerprint_ssdeep_build "$<TARGET_FILE:fingerprint_ssdeep>")
-        elseif(tool STREQUAL "capa")
-            list(APPEND extra_args "-DFINGERPRINT_CAPA_EXECUTABLE=$<TARGET_FILE:fingerprint_capa>")
-            list(APPEND extra_deps fingerprint_capa_build "$<TARGET_FILE:fingerprint_capa>")
-        elseif(tool STREQUAL "bindiff")
-            list(APPEND extra_args
-                "-DFINGERPRINT_BINDIFF_EXECUTABLE=$<TARGET_FILE:fingerprint_bindiff>"
-                "-DFINGERPRINT_BINEXPORT_EXECUTABLE=${FINGERPRINT_BINEXPORT_EXECUTABLE}"
-                "-DFINGERPRINT_BINEXPORT_ROOT=${FINGERPRINT_BINEXPORT_ROOT}"
-                "-DFINGERPRINT_BINEXPORT_JAVA_EXECUTABLE=${Java_JAVA_EXECUTABLE}")
-            list(APPEND extra_deps fingerprint_bindiff_build ${FINGERPRINT_BINDIFF_DEPENDENCIES})
-        elseif(tool STREQUAL "bsim")
-            list(APPEND extra_args
-                "-DFINGERPRINT_BSIM_EXECUTABLE=${FINGERPRINT_BSIM_EXECUTABLE}"
-                "-DFINGERPRINT_BSIM_ROOT=${FINGERPRINT_BSIM_ROOT}"
-                "-DFINGERPRINT_BSIM_JAVA_EXECUTABLE=${Java_JAVA_EXECUTABLE}")
-            list(APPEND extra_deps fingerprint_bsim_build ${FINGERPRINT_BSIM_DEPENDENCIES})
-        endif()
-        set(script "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/cmake/${tool}.cmake")
-        list(APPEND commands COMMAND "${CMAKE_COMMAND}"
-            "-DINPUT1=$<TARGET_FILE:${target1}>"
-            "-DINPUT2=$<TARGET_FILE:${target2}>"
-            "-DINPUT1_TARGET=${target1}"
-            "-DINPUT2_TARGET=${target2}"
-            "-DBUILD_CONFIG=$<CONFIG>"
-            "-DOUTPUT=${temporary}"
-            ${extra_args}
-            -P "${script}")
+function(_fingerprint_manifest_set variable)
+    string(APPEND manifest_content "set(${variable})\n")
+    foreach(value IN LISTS ARGN)
+        set(equals "=")
+        string(FIND "${value}" "]${equals}]" closing)
+        while(NOT closing EQUAL -1)
+            string(APPEND equals "=")
+            string(FIND "${value}" "]${equals}]" closing)
+        endwhile()
+        string(APPEND manifest_content "list(APPEND ${variable} [${equals}[${value}]${equals}])\n")
     endforeach()
-    add_custom_command(
-        OUTPUT "${output}"
-        COMMAND "${CMAKE_COMMAND}" -E make_directory "${directory}"
-        COMMAND "${CMAKE_COMMAND}" -E rm -f "${temporary}"
-        ${commands}
-        COMMAND "${CMAKE_COMMAND}" -E rename "${temporary}" "${output}"
-        DEPENDS
-            "${target1}"
-            "${target2}"
-            ${FINGERPRINT_TOOL_SCRIPTS}
-            ${extra_deps}
-        COMMENT ""
-        VERBATIM)
-    add_custom_target("${comparison}" DEPENDS "${output}")
-    set_property(TARGET "${comparison}" PROPERTY FINGERPRINT_REPORT "${output}")
+    set(manifest_content "${manifest_content}" PARENT_SCOPE)
 endfunction()
 
 function(fingerprint_compare)
@@ -132,7 +177,11 @@ function(fingerprint_compare)
     if(count LESS 2)
         message(FATAL_ERROR "At least two targets are required for fingerprint comparison")
     endif()
-
+    foreach(target IN LISTS targets)
+        if(NOT TARGET "${target}")
+            message(FATAL_ERROR "Unknown target in fingerprint comparison: ${target}")
+        endif()
+    endforeach()
     if(ARG_GHIDRA_DIR)
         get_filename_component(ghidra_dir "${ARG_GHIDRA_DIR}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
         set(ghidra_headless ghidra_headless-NOTFOUND)
@@ -154,44 +203,83 @@ function(fingerprint_compare)
     _fingerprint_bindiff_setup("${ghidra_headless}")
     _fingerprint_bsim_setup("${ghidra_headless}")
 
-    set(comparisons)
-    set(reports)
-    math(EXPR last_index "${count} - 1")
-    foreach(i RANGE 0 ${last_index})
-        list(GET targets ${i} left_target)
-        foreach(j RANGE ${i} ${last_index})
-            if(i EQUAL j)
-                continue()
-            endif()
-            list(GET targets ${j} right_target)
-            _fingerprint_compare_pairwise(
-                "${left_target}"
-                "${right_target}"
-                DEPENDS ${ARG_DEPENDS}
-                ARGS ${ARG_ARGS})
-            list(APPEND comparisons "${comparison}")
-            list(APPEND reports "${report}")
-        endforeach()
-    endforeach()
-
     if(NOT TARGET fingerprint_compare)
-        add_custom_target(fingerprint_compare ALL)
+        add_custom_target(fingerprint_compare ALL
+            COMMAND "${CMAKE_COMMAND}"
+                "-DFINGERPRINT_MANIFESTS=$<GENEX_EVAL:$<TARGET_PROPERTY:fingerprint_compare,FINGERPRINT_MANIFESTS>>"
+                -P "${CMAKE_CURRENT_FUNCTION_LIST_FILE}"
+            COMMENT ""
+            VERBATIM
+            USES_TERMINAL)
     endif()
-    set(groups)
-    foreach(tool IN LISTS FINGERPRINT_TOOLS)
-        string(SHA256 id "${tool}|${reports}")
-        string(SUBSTRING "${id}" 0 12 id)
-        set(group "fingerprint_${tool}_all_${id}")
-        if(NOT TARGET "${group}")
-            add_custom_target("${group}"
-                COMMAND "${CMAKE_COMMAND}" -E echo "Compared fingerprints with ${tool} for ${count} targets"
-                COMMENT ""
-                VERBATIM)
-            add_dependencies("${group}" ${comparisons})
+    add_dependencies(fingerprint_compare ${targets})
+
+    set(tools_directory "${CMAKE_BINARY_DIR}/_deps/fingerprint-tools")
+    set(tlsh_executable "${tools_directory}/bin/$<CONFIG>/tlsh${CMAKE_EXECUTABLE_SUFFIX}")
+    set(report_executable "${tools_directory}/bin/$<CONFIG>/fingerprint_report_tool${CMAKE_EXECUTABLE_SUFFIX}")
+    set(configure_args -G "${CMAKE_GENERATOR}")
+    if(NOT CMAKE_CONFIGURATION_TYPES)
+        list(APPEND configure_args "-DCMAKE_BUILD_TYPE:STRING=$<CONFIG>")
+    endif()
+    if(CMAKE_GENERATOR_PLATFORM)
+        list(APPEND configure_args -A "${CMAKE_GENERATOR_PLATFORM}")
+    endif()
+    if(CMAKE_GENERATOR_TOOLSET)
+        list(APPEND configure_args -T "${CMAKE_GENERATOR_TOOLSET}")
+    endif()
+    foreach(variable IN ITEMS CMAKE_CXX_COMPILER CMAKE_GENERATOR_INSTANCE CMAKE_MAKE_PROGRAM)
+        if(DEFINED ${variable} AND NOT "${${variable}}" STREQUAL "")
+            list(APPEND configure_args "-D${variable}:STRING=${${variable}}")
         endif()
-        list(APPEND groups "${group}")
     endforeach()
-    _fingerprint_report(TARGET_COUNT "${count}" INPUTS ${reports} DEPENDS ${groups})
+    set(inputs)
+    set(dependencies ${FINGERPRINT_TOOL_SCRIPTS} ${FINGERPRINT_BINDIFF_DEPENDENCIES} ${FINGERPRINT_BSIM_DEPENDENCIES}
+        "${tlsh_executable}" "$<TARGET_FILE:fingerprint_ssdeep>" "$<TARGET_FILE:fingerprint_capa>")
+    foreach(target IN LISTS targets)
+        list(APPEND inputs "$<TARGET_FILE:${target}>")
+    endforeach()
+    foreach(dependency IN LISTS ARG_DEPENDS)
+        if(TARGET "${dependency}")
+            add_dependencies(fingerprint_compare "${dependency}")
+            get_target_property(type "${dependency}" TYPE)
+            if(type MATCHES "^(EXECUTABLE|STATIC_LIBRARY|SHARED_LIBRARY|MODULE_LIBRARY)$")
+                list(APPEND dependencies "$<TARGET_FILE:${dependency}>")
+            endif()
+        else()
+            get_filename_component(dependency "${dependency}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+            list(APPEND dependencies "${dependency}")
+        endif()
+    endforeach()
+    list(REMOVE_DUPLICATES dependencies)
+    string(SHA256 id "${targets}|${ghidra_headless}|${CMAKE_CURRENT_BINARY_DIR}|${ARG_ARGS}|${ARG_DEPENDS}")
+    string(SUBSTRING "${id}" 0 12 id)
+    set(manifest "${CMAKE_CURRENT_BINARY_DIR}/fingerprint/$<CONFIG>/compare_${id}.cmake")
+    set(manifest_content "")
+    _fingerprint_manifest_set(FINGERPRINT_SET_ID "${id}")
+    _fingerprint_manifest_set(FINGERPRINT_SOURCE_DIRECTORY "${CMAKE_CURRENT_FUNCTION_LIST_DIR}")
+    _fingerprint_manifest_set(FINGERPRINT_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/fingerprint/$<CONFIG>")
+    _fingerprint_manifest_set(BUILD_CONFIG "$<CONFIG>")
+    _fingerprint_manifest_set(FINGERPRINT_TARGETS ${targets})
+    _fingerprint_manifest_set(FINGERPRINT_INPUTS ${inputs})
+    _fingerprint_manifest_set(FINGERPRINT_DEPENDENCIES ${dependencies})
+    _fingerprint_manifest_set(FINGERPRINT_ARGS ${ARG_ARGS})
+    _fingerprint_manifest_set(FINGERPRINT_TOOLS_BUILD_DIRECTORY "${tools_directory}")
+    _fingerprint_manifest_set(FINGERPRINT_TOOLS_CONFIGURE_ARGS ${configure_args})
+    _fingerprint_manifest_set(FINGERPRINT_TLSH_SOURCE_DIR "${FINGERPRINT_TLSH_SOURCE_DIR}")
+    _fingerprint_manifest_set(FINGERPRINT_REPORT_EXECUTABLE "${report_executable}")
+    _fingerprint_manifest_set(FINGERPRINT_TLSH_EXECUTABLE "${tlsh_executable}")
+    _fingerprint_manifest_set(FINGERPRINT_SSDEEP_EXECUTABLE "$<TARGET_FILE:fingerprint_ssdeep>")
+    _fingerprint_manifest_set(FINGERPRINT_CAPA_EXECUTABLE "$<TARGET_FILE:fingerprint_capa>")
+    _fingerprint_manifest_set(FINGERPRINT_BINDIFF_EXECUTABLE "$<TARGET_FILE:fingerprint_bindiff>")
+    _fingerprint_manifest_set(FINGERPRINT_JAVA_EXECUTABLE "${Java_JAVA_EXECUTABLE}")
+    foreach(variable IN ITEMS FINGERPRINT_BINEXPORT_EXECUTABLE FINGERPRINT_BINEXPORT_ROOT FINGERPRINT_BSIM_EXECUTABLE FINGERPRINT_BSIM_ROOT)
+        _fingerprint_manifest_set(${variable} "${${variable}}")
+    endforeach()
+    file(GENERATE OUTPUT "${manifest}" CONTENT "${manifest_content}")
+    get_target_property(manifests fingerprint_compare FINGERPRINT_MANIFESTS)
+    if(NOT manifest IN_LIST manifests)
+        set_property(TARGET fingerprint_compare APPEND PROPERTY FINGERPRINT_MANIFESTS "${manifest}")
+    endif()
 endfunction()
 
 if(FINGERPRINT_BUILD_DEMO)

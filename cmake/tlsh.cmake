@@ -2,8 +2,9 @@ include_guard(GLOBAL)
 
 if(NOT CMAKE_SCRIPT_MODE_FILE)
     set(FINGERPRINT_TLSH_ROOT "${CMAKE_BINARY_DIR}/_deps/tlsh")
-    set(FINGERPRINT_TLSH_SOURCE_DIR "${FINGERPRINT_TLSH_ROOT}/src")
-    set(FINGERPRINT_TLSH_BINARY "$<TARGET_FILE:fingerprint_tlsh>")
+    if(NOT FINGERPRINT_TLSH_SOURCE_DIR)
+        set(FINGERPRINT_TLSH_SOURCE_DIR "${FINGERPRINT_TLSH_ROOT}/src")
+    endif()
     if(NOT EXISTS "${FINGERPRINT_TLSH_SOURCE_DIR}/CMakeLists.txt")
         find_package(Git REQUIRED)
         message(STATUS "[fingerprint] Downloading TLSH sources")
@@ -25,17 +26,6 @@ if(NOT CMAKE_SCRIPT_MODE_FILE)
         "${FINGERPRINT_TLSH_SOURCE_DIR}/src/shared_file_functions.cpp"
         "${FINGERPRINT_TLSH_SOURCE_DIR}/test/tlsh_unittest.cpp"
         "${FINGERPRINT_TLSH_SOURCE_DIR}/Windows/WinFunctions.cpp")
-    add_executable(fingerprint_tlsh EXCLUDE_FROM_ALL ${FINGERPRINT_TLSH_SOURCES})
-    target_include_directories(fingerprint_tlsh PRIVATE
-        "${FINGERPRINT_TLSH_SOURCE_DIR}/include"
-        "${FINGERPRINT_TLSH_SOURCE_DIR}/src"
-        "${FINGERPRINT_TLSH_SOURCE_DIR}/Windows")
-    target_compile_definitions(fingerprint_tlsh PRIVATE WINDOWS WIN32 _WINDOWS _CRT_SECURE_NO_WARNINGS TLSH_LIB)
-    set_target_properties(fingerprint_tlsh PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${FINGERPRINT_TLSH_ROOT}/bin"
-        OUTPUT_NAME "tlsh")
-    add_custom_target(fingerprint_tlsh_build DEPENDS fingerprint_tlsh)
-    set(FINGERPRINT_TLSH_EXECUTABLE "$<TARGET_FILE:fingerprint_tlsh>")
     return()
 endif()
 

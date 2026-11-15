@@ -175,7 +175,6 @@ public class FingerprintBSim extends GhidraScript {
     if(NOT TARGET fingerprint_bsim)
         add_executable(fingerprint_bsim IMPORTED GLOBAL)
         set_target_properties(fingerprint_bsim PROPERTIES IMPORTED_LOCATION "${FINGERPRINT_BSIM_EXECUTABLE}")
-        add_custom_target(fingerprint_bsim_build DEPENDS ${FINGERPRINT_BSIM_DEPENDENCIES})
     endif()
     foreach(variable IN ITEMS FINGERPRINT_BSIM_ROOT FINGERPRINT_BSIM_EXECUTABLE FINGERPRINT_BSIM_DEPENDENCIES)
         set(${variable} "${${variable}}" PARENT_SCOPE)

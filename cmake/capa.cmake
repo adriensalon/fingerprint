@@ -36,7 +36,6 @@ if(NOT CMAKE_SCRIPT_MODE_FILE)
     add_executable(fingerprint_capa IMPORTED GLOBAL)
     set_target_properties(fingerprint_capa PROPERTIES
         IMPORTED_LOCATION "${FINGERPRINT_CAPA_EXECUTABLE}")
-    add_custom_target(fingerprint_capa_build DEPENDS "${FINGERPRINT_CAPA_EXECUTABLE}")
     return()
 endif()
 

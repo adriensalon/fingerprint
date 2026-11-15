@@ -36,7 +36,6 @@ if(NOT CMAKE_SCRIPT_MODE_FILE)
     add_executable(fingerprint_ssdeep IMPORTED GLOBAL)
     set_target_properties(fingerprint_ssdeep PROPERTIES
         IMPORTED_LOCATION "${FINGERPRINT_SSDEEP_EXECUTABLE}")
-    add_custom_target(fingerprint_ssdeep_build DEPENDS "${FINGERPRINT_SSDEEP_EXECUTABLE}")
     return()
 endif()
 

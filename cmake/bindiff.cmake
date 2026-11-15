@@ -115,7 +115,6 @@ public class FingerprintBinExport extends GhidraScript {
     if(NOT TARGET fingerprint_bindiff)
         add_executable(fingerprint_bindiff IMPORTED GLOBAL)
         set_target_properties(fingerprint_bindiff PROPERTIES IMPORTED_LOCATION "${FINGERPRINT_BINDIFF_EXECUTABLE}")
-        add_custom_target(fingerprint_bindiff_build DEPENDS ${FINGERPRINT_BINDIFF_DEPENDENCIES})
     endif()
     foreach(variable IN ITEMS FINGERPRINT_BINEXPORT_ROOT FINGERPRINT_BINEXPORT_EXECUTABLE FINGERPRINT_BINDIFF_DEPENDENCIES)
         set(${variable} "${${variable}}" PARENT_SCOPE)

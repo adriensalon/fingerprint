@@ -17,7 +17,6 @@ add_custom_command(OUTPUT "${copy}"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:demo_baseline>" "${copy}"
     DEPENDS demo_baseline "$<TARGET_FILE:demo_baseline>"
     VERBATIM)
-add_custom_target(demo_identical_copy DEPENDS "${copy}")
 add_executable(demo_identical IMPORTED)
 set_target_properties(demo_identical PROPERTIES
     IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_BUILD_TYPE}/demo_identical${CMAKE_EXECUTABLE_SUFFIX}")
@@ -27,6 +26,6 @@ foreach(config IN LISTS CMAKE_CONFIGURATION_TYPES)
     set_property(TARGET demo_identical PROPERTY "IMPORTED_LOCATION_${upper_config}"
         "${CMAKE_CURRENT_BINARY_DIR}/${config}/demo_identical${CMAKE_EXECUTABLE_SUFFIX}")
 endforeach()
-add_dependencies(demo_identical demo_identical_copy)
 
-fingerprint_compare(demo_baseline demo_identical demo_variant demo_extended demo_routes)
+fingerprint_compare(demo_baseline demo_identical demo_variant demo_extended demo_routes GHIDRA_DIR "C:/libs/ghidra")
+target_sources(fingerprint_compare PRIVATE "${copy}")

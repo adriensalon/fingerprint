@@ -425,7 +425,7 @@ std::string make_report(const Corpus& corpus, bool all_pairs) {
         if (group.empty()) distinct_bytes += exe.bytes;
         group.push_back(name); name_width = std::max(name_width, display(name).size());
     }
-    out << "\nFINGERPRINT REPORT\n==================\n" << corpus.executables.size() << " executables, " << corpus.pairs.size() << " complete pair comparisons, " << hashes.size() << " distinct SHA-256 hashes\n"
+    out << "\nFINGERPRINT\n\n" << corpus.executables.size() << " executables, " << corpus.pairs.size() << " complete pair comparisons, " << hashes.size() << " distinct SHA-256 hashes\n"
         << "Configuration: " << (corpus.configuration->empty() ? "unspecified" : display(*corpus.configuration)) << '\n'
         << "Total executable bytes: " << total_bytes << "; deduplicated bytes: " << distinct_bytes << '\n';
     out << "\nExecutables\n  " << std::left << std::setw(static_cast<int>(name_width)) << "Target" << "  Bytes      SHA-256 prefix    Functions  BSim sigs  capa rules\n";
