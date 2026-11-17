@@ -27,5 +27,5 @@ foreach(config IN LISTS CMAKE_CONFIGURATION_TYPES)
         "${CMAKE_CURRENT_BINARY_DIR}/${config}/demo_identical${CMAKE_EXECUTABLE_SUFFIX}")
 endforeach()
 
-fingerprint_compare(demo_baseline demo_identical demo_variant demo_extended demo_routes GHIDRA_DIR "C:/libs/ghidra")
+fingerprint_compare(demo_baseline demo_identical demo_variant demo_extended demo_routes)
 target_sources(fingerprint_compare PRIVATE "${copy}")
